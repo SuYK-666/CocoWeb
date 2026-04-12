@@ -1,8 +1,8 @@
 # model.py
 import numpy as np
-from .config import CausalLMConfig
-from .transformer_block import TransformerBlock
-from .layernorm import LayerNorm
+from config import CausalLMConfig
+from transformer_block import TransformerBlock
+from layernorm import LayerNorm
 
 class CausalLM:
     def __init__(self, config: CausalLMConfig):

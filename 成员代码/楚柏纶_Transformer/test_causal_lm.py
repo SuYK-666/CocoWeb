@@ -1,27 +1,37 @@
 # test_causal_lm.py
-import torch
+import numpy as np
 from config import CausalLMConfig
-from tokenizer import CausalLMTokenizer
 from model import CausalLM
 
 def test_zero_input():
-    config = CausalLMConfig(vocab_size=10, hidden_size=8, num_layers=2, num_heads=2, max_position_embeddings=16)
+    config = CausalLMConfig(
+        vocab_size=10, 
+        hidden_size=8, 
+        num_layers=2, 
+        num_heads=2, 
+        max_position_embeddings=16
+    )
     model = CausalLM(config)
-    # 用torch替换np的权重
-    model.embeddings = torch.nn.Parameter(torch.randn(config.vocab_size, config.hidden_size) * 0.01)
-    model.head = torch.nn.Parameter(torch.randn(config.hidden_size, config.vocab_size) * 0.01)
-    # 输入全0
+    
+    # 按照用户要求：测试输入零tensor的情况
+    # 将Embedding权重设为全0，这样无论输入什么ID，进入Block的都是零tensor
+    model.embeddings = np.zeros((config.vocab_size, config.hidden_size))
+    
+    # 输入一组Token IDs
     input_ids = [0, 0, 0, 0]
-    # 用torch tensor
-    x = model.embeddings[input_ids].detach().numpy()
-    for block in model.blocks:
-        x = block(x)
-    x = model.ln_f(x)
-    logits = x @ model.head.detach().numpy()
-    print("logits shape:", logits.shape)
-    print("logits:", logits)
-    assert logits.shape == (len(input_ids), config.vocab_size)
-    print("Test passed!")
+    
+    # 前向传播
+    logits = model.forward(input_ids)
+    
+    print("Input sequence length:", len(input_ids))
+    print("Vocab size:", config.vocab_size)
+    print("Logits shape:", logits.shape)
+    
+    # 验证形状是否正确 [seq_len, vocab_size]
+    assert logits.shape == (len(input_ids), config.vocab_size), f"Expected shape {(len(input_ids), config.vocab_size)}, but got {logits.shape}"
 
 if __name__ == "__main__":
-    test_zero_input()
+    try:
+        test_zero_input()
+    except Exception as e:
+        exit(1)

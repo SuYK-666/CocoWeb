@@ -1,6 +1,6 @@
 # ffn.py
 import numpy as np
-from .layernorm import LayerNorm
+from layernorm import LayerNorm
 
 class FeedForward:
     def __init__(self, hidden_size, dropout=0.1):

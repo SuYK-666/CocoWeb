@@ -1,6 +1,6 @@
 # transformer_block.py
-from .mha import MultiHeadAttention
-from .ffn import FeedForward
+from mha import MultiHeadAttention
+from ffn import FeedForward
 
 class TransformerBlock:
     def __init__(self, hidden_size, num_heads, dropout=0.1):
