@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import queue
+import secrets
 import threading
 import uuid
 import webbrowser
@@ -35,9 +36,11 @@ def _sse_payload(payload: dict[str, Any]) -> str:
 
 def _create_job(repo_url: str, analysis_type: str) -> str:
     job_id = uuid.uuid4().hex
+    access_token = secrets.token_urlsafe(32)
     with _JOBS_LOCK:
         _JOBS[job_id] = {
             "job_id": job_id,
+            "access_token": access_token,
             "repo_url": repo_url,
             "analysis_type": analysis_type,
             "status": "queued",
@@ -55,6 +58,27 @@ def _create_job(repo_url: str, analysis_type: str) -> str:
 def _get_job(job_id: str) -> dict[str, Any] | None:
     with _JOBS_LOCK:
         return _JOBS.get(job_id)
+
+
+def _get_request_token() -> str:
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+    return str(request.args.get("token", "")).strip()
+
+
+def _authorize_job(job_id: str) -> dict[str, Any]:
+    job = _get_job(job_id)
+    if not job:
+        abort(404, description="job not found")
+
+    expected_token = str(job.get("access_token", ""))
+    provided_token = _get_request_token()
+    if not expected_token or not provided_token:
+        abort(401, description="missing job access token")
+    if not secrets.compare_digest(expected_token, provided_token):
+        abort(403, description="invalid job access token")
+    return job
 
 
 def _set_job_status(job_id: str, status: str, **extra: Any) -> None:
@@ -145,6 +169,8 @@ def _run_analysis_job(
             logger=run_logger,
         )
         result = orchestrator.run(repo_url=repo_url, analysis_type=analysis_type)
+        job_snapshot = _get_job(job_id) or {}
+        job_access_token = str(job_snapshot.get("access_token", ""))
 
         report_paths = result.get("report_paths", {})
         html_content = ""
@@ -165,7 +191,7 @@ def _run_analysis_job(
             "selectedCriticPromptLeakage": result.get("selected_critic_prompt_leakage", False),
             "htmlContent": html_content,
             "downloadUrls": {
-                fmt: f"/api/download/{job_id}/{fmt}"
+                fmt: f"/api/download/{job_id}/{fmt}?token={job_access_token}"
                 for fmt in ("docx", "html", "md")
                 if fmt in report_paths
             },
@@ -210,6 +236,8 @@ def create_app() -> Flask:
             return jsonify({"error": "analysisType 必须为 econ 或 ethics"}), 400
 
         job_id = _create_job(repo_url=repo_url, analysis_type=analysis_type)
+        job = _get_job(job_id) or {}
+        access_token = str(job.get("access_token", ""))
         worker = threading.Thread(
             target=_run_analysis_job,
             args=(job_id, repo_url, analysis_type, api_key, github_token),
@@ -220,17 +248,16 @@ def create_app() -> Flask:
         return jsonify(
             {
                 "jobId": job_id,
-                "streamUrl": f"/api/stream/{job_id}",
-                "resultUrl": f"/api/result/{job_id}",
+                "accessToken": access_token,
+                "streamUrl": f"/api/stream/{job_id}?token={access_token}",
+                "resultUrl": f"/api/result/{job_id}?token={access_token}",
                 "downloadBaseUrl": f"/api/download/{job_id}",
             }
         )
 
     @app.get("/api/stream/<job_id>")
     def stream(job_id: str) -> Response:
-        job = _get_job(job_id)
-        if not job:
-            abort(404, description="job not found")
+        job = _authorize_job(job_id)
 
         def event_stream() -> Any:
             with _JOBS_LOCK:
@@ -284,6 +311,7 @@ def create_app() -> Flask:
 
     @app.get("/api/result/<job_id>")
     def result(job_id: str) -> Response:
+        _authorize_job(job_id)
         payload = _build_result(job_id)
         if not payload:
             abort(404, description="job not found")
@@ -291,6 +319,7 @@ def create_app() -> Flask:
 
     @app.get("/api/download/<job_id>/<fmt>")
     def download(job_id: str, fmt: str) -> Response:
+        _authorize_job(job_id)
         if fmt not in {"docx", "html", "md"}:
             abort(404, description="unsupported format")
 

@@ -163,6 +163,12 @@ Copy-Item .env.example .env
 
 - GITHUB_TOKEN（减少 API 限流风险）
 
+## 安全提示
+
+- `DEEPSEEK_API_KEY` 与 `GITHUB_TOKEN` 属于敏感信息，请仅保存在本地 `.env`，不要写入代码或提交到仓库。
+- 若需共享运行日志或报告，请先检查是否包含仓库链接、用户名等运行信息。
+- 公共环境演示建议使用临时 Token，并在演示后及时更换或吊销。
+
 ### 一分钟体验
 
 ```powershell
