@@ -26,6 +26,7 @@ const state = {
     currentStep: 0,
     eventSource: null,
     resultUrl: "",
+    accessToken: "",
     jobId: "",
     logCursor: 0,
     pollTimer: null,
@@ -104,6 +105,16 @@ function setDownloadLink(element, url) {
     element.href = url;
 }
 
+function withQuery(url, params) {
+    const target = new URL(url, window.location.origin);
+    for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null && String(value) !== "") {
+            target.searchParams.set(key, String(value));
+        }
+    }
+    return `${target.pathname}${target.search}`;
+}
+
 function applyHistoryLogs(history) {
     if (!Array.isArray(history)) {
         return;
@@ -180,7 +191,7 @@ async function syncJobState(options = {}) {
     const silent = Boolean(options.silent);
     let response;
     try {
-        response = await fetch(`${state.resultUrl}?t=${Date.now()}`, {
+        response = await fetch(withQuery(state.resultUrl, { t: Date.now(), token: state.accessToken }), {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
         });
@@ -236,7 +247,7 @@ function closeEventSource() {
 function connectStream(streamUrl) {
     closeEventSource();
     state.streamWarned = false;
-    const source = new EventSource(streamUrl);
+    const source = new EventSource(withQuery(streamUrl, { token: state.accessToken }));
     state.eventSource = source;
 
     source.onopen = () => {
@@ -364,6 +375,7 @@ async function startAnalysis() {
     }
 
     state.jobId = payload.jobId;
+    state.accessToken = payload.accessToken || "";
     state.resultUrl = payload.resultUrl;
     appendLog(`任务已创建，Job ID: ${state.jobId}`);
     setStatus("任务执行中...", "running");
